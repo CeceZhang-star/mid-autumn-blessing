@@ -247,6 +247,7 @@
   let rockets = [];      // 上升的烟花弹
   let particles = [];    // 爆炸粒子
   let flashes = [];      // 爆炸光晕
+  let neons = [];        // 楼顶霓虹灯
   let mode = 'idle';     // idle | show | frozen
   let showStart = 0;
   let frozen = false;    // 定格标志
@@ -281,31 +282,40 @@
       });
     }
 
-    // 远景 + 近景两层楼群
+    // 三层楼群：远景、中景、近景，楼更密、灯更繁
     buildings = [];
     windows = [];
+    neons = [];
+    const winColors = [
+      'rgba(255,206,110,0.9)', 'rgba(255,180,80,0.85)', 'rgba(255,230,170,0.9)',
+      'rgba(190,220,255,0.75)', 'rgba(255,150,120,0.7)'
+    ];
+    const neonColors = ['#ff5f8f', '#4dd2ff', '#ffe066', '#7dff9e', '#c07dff'];
     const layers = [
-      { hMin: H * 0.10, hMax: H * 0.22, color: '#0d1230', winChance: 0.10, winColor: 'rgba(255,214,130,0.5)', yBase: H },
-      { hMin: H * 0.16, hMax: H * 0.34, color: '#070a1e', winChance: 0.16, winColor: 'rgba(255,206,110,0.85)', yBase: H }
+      { hMin: H * 0.08, hMax: H * 0.18, color: '#11163a', winChance: 0.09 },
+      { hMin: H * 0.12, hMax: H * 0.26, color: '#0b0f2b', winChance: 0.15 },
+      { hMin: H * 0.16, hMax: H * 0.36, color: '#060919', winChance: 0.22 }
     ];
     layers.forEach((L, li) => {
       let x = -10;
       while (x < W + 20) {
-        const bw = rand(26, 70);
+        const bw = rand(16, 50);
         const bh = rand(L.hMin, L.hMax);
-        const b = { x, w: bw, h: bh, y: L.yBase - bh, layer: li };
+        const b = { x, w: bw, h: bh, y: H - bh, layer: li };
         buildings.push(b);
+        // 整栋楼统一一种灯光颜色，更真实
+        const wc = winColors[Math.floor(Math.random() * winColors.length)];
         // 亮灯窗口
-        const cols = Math.max(1, Math.floor(bw / 14));
-        const rows = Math.max(1, Math.floor(bh / 18));
+        const cols = Math.max(1, Math.floor(bw / 11));
+        const rows = Math.max(1, Math.floor(bh / 14));
         for (let c = 0; c < cols; c++) {
           for (let r = 0; r < rows; r++) {
             if (Math.random() < L.winChance) {
               windows.push({
-                x: b.x + 4 + c * (bw - 8) / cols,
-                y: b.y + 6 + r * (bh - 10) / rows,
-                w: 4, h: 6,
-                color: L.winColor,
+                x: b.x + 3 + c * (bw - 6) / cols,
+                y: b.y + 5 + r * (bh - 8) / rows,
+                w: 3.5, h: 5,
+                color: wc,
                 flicker: Math.random() < 0.15,
                 speed: rand(0.002, 0.01),
                 phase: Math.random() * TAU,
@@ -314,7 +324,17 @@
             }
           }
         }
-        x += bw + rand(2, 10);
+        // 近景部分楼顶加霓虹灯
+        if (li === 2 && Math.random() < 0.32) {
+          neons.push({
+            x: b.x + bw / 2,
+            y: b.y,
+            color: neonColors[Math.floor(Math.random() * neonColors.length)],
+            phase: Math.random() * TAU,
+            speed: rand(0.004, 0.012)
+          });
+        }
+        x += bw + rand(1, 5);
       }
     });
   }
@@ -324,7 +344,7 @@
 
   /* ================= 月亮 ================= */
   function drawMoon(t) {
-    const mx = W * 0.74, my = H * 0.17, mr = Math.min(W, H) * 0.105;
+    const mx = W * 0.76, my = H * 0.145, mr = Math.min(W, H) * 0.15;
     // 光晕
     const glow = ctx.createRadialGradient(mx, my, mr * 0.4, mx, my, mr * 4.2);
     glow.addColorStop(0, 'rgba(255,244,214,0.32)');
@@ -435,12 +455,19 @@
 
     drawMoon(t);
 
-    // 远景楼群
-    ctx.fillStyle = '#0d1230';
-    buildings.forEach(b => { if (b.layer === 0) ctx.fillRect(b.x, b.y, b.w, b.h); });
-    // 近景楼群
-    ctx.fillStyle = '#070a1e';
-    buildings.forEach(b => { if (b.layer === 1) ctx.fillRect(b.x, b.y, b.w, b.h); });
+    // 地平线城市光晕
+    const hg = ctx.createLinearGradient(0, H * 0.55, 0, H);
+    hg.addColorStop(0, 'rgba(255,170,90,0)');
+    hg.addColorStop(1, 'rgba(255,150,80,0.12)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, H * 0.55, W, H * 0.45);
+
+    // 三层楼群（远 → 近）
+    const layerColors = ['#11163a', '#0b0f2b', '#060919'];
+    layerColors.forEach((color, li) => {
+      ctx.fillStyle = color;
+      buildings.forEach(b => { if (b.layer === li) ctx.fillRect(b.x, b.y, b.w, b.h); });
+    });
 
     // 亮灯窗口
     windows.forEach(w => {
@@ -449,6 +476,20 @@
       ctx.globalAlpha = a;
       ctx.fillStyle = w.color;
       ctx.fillRect(w.x, w.y, w.w, w.h);
+    });
+    ctx.globalAlpha = 1;
+
+    // 楼顶霓虹灯（呼吸闪烁）
+    neons.forEach(n => {
+      const a = 0.45 + 0.55 * Math.abs(Math.sin(t * n.speed + n.phase));
+      ctx.globalAlpha = a;
+      ctx.fillStyle = n.color;
+      ctx.shadowColor = n.color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y - 2, 2.2, 0, TAU);
+      ctx.fill();
+      ctx.shadowBlur = 0;
     });
     ctx.globalAlpha = 1;
 
@@ -482,27 +523,26 @@
 
   /* ================= 烟花弹（上升） ================= */
   function launchRocket(delay) {
-    const cx = W / 2;
     setTimeout(() => {
       if (mode !== 'show') return;
-      const targetX = rand(W * 0.15, W * 0.85);
-      const targetY = rand(H * 0.14, H * 0.42);
+      const targetY = rand(H * 0.18, H * 0.45);
       rockets.push({
-        x: cx + rand(-W * 0.06, W * 0.06),
+        x: rand(W * 0.16, W * 0.84),
         y: H,
-        vx: (targetX - cx) / 70,
+        vx: 0, // 笔直向上
         vy: -(H - targetY) / 70 - rand(0.5, 1.5),
         targetY,
         color: TYPES[currentType].palette[0],
-        trail: []
+        trail: [],
+        grand: false
       });
     }, delay);
   }
 
-  function explode(x, y) {
+  function explode(x, y, grand) {
     const palette = TYPES[currentType].palette;
-    const size = Math.min(W, H) * rand(0.16, 0.22);
-    const count = currentType === 'circle' ? 170 : 160;
+    const size = Math.min(W, H) * rand(0.26, 0.34) * (grand ? 1.45 : 1);
+    const count = Math.round((currentType === 'circle' ? 170 : 160) * (grand ? 1.4 : 1));
     flashes.push({ x, y, r: size * 0.5, alpha: 0.9, color: palette[0] });
     shake = Math.min(shake + 3, 7);
     for (let i = 0; i < count; i++) {
@@ -561,7 +601,7 @@
         ctx.fill();
 
         if (r.y <= r.targetY || r.vy > -1) {
-          explode(r.x, r.y);
+          explode(r.x, r.y, r.grand);
           return false;
         }
         return true;
